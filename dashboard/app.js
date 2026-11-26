@@ -259,9 +259,23 @@
 
   // The board stores the blended multiple (0.6 x peer + 0.4 x base). Undo the blend to show the
   // market's own mcap/TVL for the category, clamped the way the model clamps it.
+  function unblendRaw(multiple, model) {
+    return (multiple - (1 - model.peer_weight) * model.base_multiple) / model.peer_weight;
+  }
   function unblend(multiple, model) {
-    var raw = (multiple - (1 - model.peer_weight) * model.base_multiple) / model.peer_weight;
-    return Math.min(model.peer_max, Math.max(model.peer_min, raw));
+    return Math.min(model.peer_max, Math.max(model.peer_min, unblendRaw(multiple, model)));
+  }
+  // A value sitting on a clamp boundary cannot be told apart from one the model cut there, so it
+  // is shown as an inequality rather than a precise number.
+  function clipOf(multiple, model) {
+    var raw = unblendRaw(multiple, model);
+    var tol = 2e-4;
+    if (raw <= model.peer_min + tol) return 'min';
+    if (raw >= model.peer_max - tol) return 'max';
+    return null;
+  }
+  function clippedText(value, clip) {
+    return (clip === 'min' ? '\u2264 ' : clip === 'max' ? '\u2265 ' : '') + value.toFixed(2) + 'x';
   }
 
   function categoryStats() {
@@ -278,6 +292,7 @@
         name: key,
         count: list.length,
         peers: unblend(multiple, DATA.model),
+        clip: clipOf(multiple, DATA.model),
         blended: multiple,
         own: list.some(function (r) { return r.peer_category === key; }),
         implied: medianOf(list.map(function (r) { return r.implied_value_usd; })),
@@ -312,13 +327,21 @@
         el('td', { class: 'num' },
           s.own
             ? el('div', { class: 'peer-cell' },
-                el('span', { class: 'peer-val', text: s.peers.toFixed(2) + 'x' }),
+                el('span', {
+                  class: 'peer-val' + (s.clip ? ' clipped' : ''),
+                  text: clippedText(s.peers, s.clip),
+                  title: s.clip === 'min'
+                    ? 'On the model floor of ' + DATA.model.peer_min + 'x; the measured market median can be lower.'
+                    : s.clip === 'max'
+                      ? 'On the model ceiling of ' + DATA.model.peer_max + 'x; the measured market median can be higher.'
+                      : 'Median mcap/TVL of live tokens in this category'
+                }),
                 el('span', { class: 'cat-bar', 'aria-hidden': 'true' }, el('i', { style: 'width:' + Math.max(2, Math.round((s.peers / maxPeer) * 100)) + '%' }))
               )
             : el('div', { class: 'peer-cell' }, el('span', { class: 'peer-val none', text: 'market-wide' })),
-          el('div', { class: 'peer-src', text: s.own
+          el('div', { class: 'peer-src', text: (s.own
             ? (s.peers / DATA.model.base_multiple).toFixed(2) + '\u00d7 base'
-            : 'no own comparables' })
+            : 'no own comparables') + (s.clip === 'min' ? ' \u00b7 at model floor' : s.clip === 'max' ? ' \u00b7 at model ceiling' : '') })
         ),
         el('td', { class: 'num', text: fmtUsd(s.implied) }),
         el('td', { class: 'num', text: fmtUsd(s.tvl) }),
@@ -329,7 +352,7 @@
     return el('section', { class: 'cat-panel glass' },
       el('h3', { text: 'Categories' }),
       el('h2', { text: 'Where the market pays the most per dollar of TVL', style: 'margin-top:8px;font-size:28px;letter-spacing:-0.03em;' }),
-      el('p', { class: 'model-note', style: 'margin-top:10px;max-width:78ch;', text: 'What live tokens in each category trade at per dollar of TVL - the market number, unblended. The board itself softens it toward ' + DATA.model.base_multiple + ' before scoring (' + DATA.model.peer_weight + ' x peer + ' + (1 - DATA.model.peer_weight).toFixed(1) + ' x base), so a row\u2019s own multiple is closer to the base than this. Categories with fewer than ' + DATA.model.peer_min_samples + ' live comparables have no number of their own: they share the market-wide median, are marked, and are listed after the measured ones. Click a category to filter the board.' }),
+      el('p', { class: 'model-note', style: 'margin-top:10px;max-width:78ch;', text: 'What live tokens in each category trade at per dollar of TVL - the market number, unblended. The board itself softens it toward ' + DATA.model.base_multiple + ' before scoring (' + DATA.model.peer_weight + ' x peer + ' + (1 - DATA.model.peer_weight).toFixed(1) + ' x base), so a row\u2019s own multiple is closer to the base than this. Categories with fewer than ' + DATA.model.peer_min_samples + ' live comparables have no number of their own: they share the market-wide median, are marked, and are listed after the measured ones. A value on the ' + DATA.model.peer_min + 'x floor or ' + DATA.model.peer_max + 'x ceiling is shown as \u2264 or \u2265: the median was clamped there, so the market number itself can be further out. Click a category to filter the board.' }),
       el('div', { class: 'cat-scroll' },
         el('table', { class: 'cat-table' },
           el('thead', null, el('tr', null,
@@ -688,21 +711,23 @@
 
     var m = DATA.model;
     var peer = unblend(row.peer_multiple, m);
+    var peerClip = clipOf(row.peer_multiple, m);
     var recomputed = impliedOf(row, m);
     var checks = recomputed === row.implied_value_usd ? 'Matches board.json.' : 'Differs from board.json; data may be stale.';
     shell.appendChild(el('section', { class: 'section' },
       el('h3', { text: 'Implied value' }),
       el('div', { class: 'metrics' },
         metric('TVL', fmtUsd(row.tvl_usd)),
-        metric('Market peer', peer.toFixed(2) + 'x'),
+        metric('Market peer', clippedText(peer, peerClip), peerClip ? 'clipped' : null),
         metric('Blended multiple', row.peer_multiple.toFixed(2) + 'x'),
+
         metric('7d growth', fmtPct(row.change_7d)),
         metric('Age no token', fmtAge(row.age_days)),
         metric('Growth mult', String(row.growth_multiplier)),
         metric('Maturity mult', String(row.maturity_multiplier)),
         metric('Implied value', fmtUsd(row.implied_value_usd), true)
       ),
-      el('p', { class: 'equation-note', text: DATA.model_version + ': ' + fmtUsd(row.tvl_usd) + ' × ' + row.peer_multiple.toFixed(2) + ' × ' + row.growth_multiplier + ' × ' + row.maturity_multiplier + ' = ' + fmtUsd(recomputed) + '. ' + checks + ' Market peer is the raw median mcap/TVL of ' + row.peer_samples + ' live tokens' + (row.peer_category ? ' in ' + row.peer_category : ' across the snapshot (market-wide fallback)') + '; the model scores with the blend: ' + peer.toFixed(2) + 'x × ' + m.peer_weight + ' + base ' + m.base_multiple + ' × ' + round4(1 - m.peer_weight).toFixed(2) + ' = ' + row.peer_multiple.toFixed(2) + 'x. Estimate, not price.' })
+      el('p', { class: 'equation-note', text: DATA.model_version + ': ' + fmtUsd(row.tvl_usd) + ' × ' + row.peer_multiple.toFixed(2) + ' × ' + row.growth_multiplier + ' × ' + row.maturity_multiplier + ' = ' + fmtUsd(recomputed) + '. ' + checks + ' Market peer is the median mcap/TVL of ' + row.peer_samples + ' live tokens' + (row.peer_category ? ' in ' + row.peer_category : ' across the snapshot (market-wide fallback)') + (peerClip === 'min' ? ', sitting on the model floor of ' + m.peer_min + 'x, so the market figure can be lower' : peerClip === 'max' ? ', sitting on the model ceiling of ' + m.peer_max + 'x, so the market figure can be higher' : '') + '; the model scores with the blend: ' + peer.toFixed(2) + 'x × ' + m.peer_weight + ' + base ' + m.base_multiple + ' × ' + round4(1 - m.peer_weight).toFixed(2) + ' = ' + row.peer_multiple.toFixed(2) + 'x. Estimate, not price.' })
     ));
 
     shell.appendChild(whySection(row));
@@ -753,7 +778,7 @@
   }
 
   function metric(label, value, total) {
-    return el('div', { class: 'metric' + (total ? ' total' : '') },
+    return el('div', { class: 'metric' + (total === true ? ' total' : total ? ' ' + total : '') },
       el('span', { text: label }),
       el('b', { text: value })
     );

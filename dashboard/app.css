@@ -328,6 +328,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .cat-bar { flex: 1; height: 6px; min-width: 48px; border-radius: 999px; overflow: hidden; background: rgba(255,255,255,0.07); }
 .peer-val { font-family: var(--font-num); color: #eaf7f4; }
 .peer-val.none { font-family: var(--font-body); font-size: 12px; color: var(--muted); }
+.peer-val.clipped { color: var(--value); }
 .peer-src { margin-top: 4px; max-width: 200px; font-size: 11px; line-height: 1.4; color: var(--dim); }
 .cat-bar > i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--value)); }
 .cat-best { color: var(--muted); font-family: var(--font-body); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -384,6 +385,8 @@ tbody tr:last-child td { border-bottom: 0; }
 .metric b { font-family: var(--font-num); font-size: 16px; font-weight: 550; color: #f2f9fc; }
 .metric.total { background: linear-gradient(180deg, rgba(255,209,102,0.14), rgba(255,209,102,0.04)); border-color: rgba(255,209,102,0.22); }
 .metric.total b { color: var(--value); }
+.metric.clipped { border-color: rgba(255,209,102,0.22); }
+.metric.clipped b { color: var(--value); }
 .equation-note { margin-top: 10px; font-size: 12px; line-height: 1.6; color: var(--muted); font-family: var(--font-num); overflow-wrap: anywhere; }
 .detail-copy { color: var(--muted); font-size: 14px; line-height: 1.7; margin-bottom: 14px; }
 .comps { width: 100%; border-collapse: collapse; min-width: 0; font-size: 13px; }

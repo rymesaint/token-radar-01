@@ -417,6 +417,13 @@
     return el('section', { class: 'cat-panel glass' },
       el('h3', { text: 'Categories' }),
       el('h2', { text: 'Where the market pays the most per dollar of TVL', style: 'margin-top:8px;font-size:28px;letter-spacing:-0.03em;' }),
+      el('div', { class: 'cat-legend' },
+        el('span', { class: 'legend-label', text: 'Peer evidence' }),
+        el('span', { class: 'ev-tag ample', text: '10+ ample' }),
+        el('span', { class: 'ev-tag ok', text: '6\u20139 ok' }),
+        el('span', { class: 'ev-tag thin', text: '3\u20135 thin' }),
+        el('span', { class: 'legend-note', text: 'clamped overrides the sample tier, and market-wide has no label' })
+      ),
       el('p', { class: 'model-note', style: 'margin-top:10px;max-width:78ch;', text: 'What live tokens in each category trade at per dollar of TVL - the market number, unblended. The board itself softens it toward ' + DATA.model.base_multiple + ' before scoring (' + DATA.model.peer_weight + ' x peer + ' + (1 - DATA.model.peer_weight).toFixed(1) + ' x base), so a row\u2019s own multiple is closer to the base than this. Categories with fewer than ' + DATA.model.peer_min_samples + ' live comparables have no number of their own: they share the market-wide median, are marked, and are listed after the measured ones. A value on the ' + DATA.model.peer_min + 'x floor or ' + DATA.model.peer_max + 'x ceiling is shown as \u2264 or \u2265: the median was clamped there, so the market number itself can be further out. Samples counts the live tokens behind that number and always carries its evidence tier: 10 or more ample, 6-9 ok, 3-5 thin. A multiple the model clamped is labelled clamped instead, since its measured median lies outside the shown range whatever the count. Click a category to filter the board.' }),
       el('div', { class: 'cat-scroll' },
         el('table', { class: 'cat-table' },

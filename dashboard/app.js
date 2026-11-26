@@ -148,6 +148,15 @@
       worst: rankAmong(row.implied_value_usd * (1 - share), row.slug)
     };
   }
+  function nearestNeighbor(row) {
+    var best = null;
+    DATA.rows.forEach(function (r) {
+      if (r.slug === row.slug) return;
+      var delta = (r.implied_value_usd - row.implied_value_usd) / row.implied_value_usd;
+      if (best === null || Math.abs(delta) < Math.abs(best.delta)) best = { row: r, delta: delta };
+    });
+    return best;
+  }
   // How much evidence stands behind a category's peer number: below six live comparables the
   // median is a handful of prices, so the label says so next to the count.
   function evidenceLabel(samples) {
@@ -539,6 +548,8 @@
       implied_value_usd: r.implied_value_usd,
       farm_capital_usd: capitalFor(r), farm_hold_days: holdDaysFor(r.age_days),
       farm_steps: (r.farm_steps || []).length, close_within_5pct: impliedBand(r).length,
+      nearest_gap_pct: round4(nearestNeighbor(r).delta * 100),
+      rank_band: '#' + bandRanks(r).best + '-' + bandRanks(r).worst,
       shortlisted: isShortlisted(r.slug), in_compare: isCompared(r.slug)
     };
   }
@@ -616,6 +627,8 @@
       var growth = r.change_7d === null ? 'n/a' : fmtPct(r.change_7d);
       var growthClass = r.change_7d === null ? '' : r.change_7d >= 0 ? 'pos' : 'neg';
       var near = impliedBand(r).length;
+      var ranks = bandRanks(r);
+      var closest = nearestNeighbor(r);
       var tr = el('tr', {
         'data-selected': state.selected === r.slug ? 'true' : 'false',
         tabindex: '0',
@@ -629,6 +642,11 @@
               class: 'rank-near',
               title: near + ' other rows sit within \u00b15% of this implied value',
               text: near === 0 ? 'clear' : near + ' close'
+            }),
+            el('span', {
+              class: 'rank-band',
+              title: 'Rank range if this implied value moved \u00b15%',
+              text: ranks.best === ranks.worst ? '#' + ranks.best : '#' + ranks.best + '\u2013' + ranks.worst
             })
           )
         ),
@@ -641,8 +659,15 @@
         el('td', { class: 'num age-col', text: fmtAge(r.age_days) }),
         el('td', { class: 'num peer peer-col', title: 'Market mcap per $1 TVL for comparable live tokens', text: r.peer_multiple.toFixed(2) + 'x' }),
         el('td', null, el('div', { class: 'implied-cell' },
-          el('div', { class: 'bar', 'aria-hidden': 'true' }, el('i', { style: 'width:' + Math.max(3, Math.round((r.implied_value_usd / max) * 100)) + '%' })),
-          el('span', { class: 'num', text: fmtUsd(r.implied_value_usd) })
+          el('div', { class: 'implied-main' },
+            el('div', { class: 'bar', 'aria-hidden': 'true' }, el('i', { style: 'width:' + Math.max(3, Math.round((r.implied_value_usd / max) * 100)) + '%' })),
+            el('span', { class: 'num', text: fmtUsd(r.implied_value_usd) })
+          ),
+          el('span', {
+            class: 'implied-near',
+            title: 'Nearest other row: ' + closest.row.name + ' at ' + signedPct(closest.delta) + ', ' + fmtUsd(closest.row.implied_value_usd),
+            text: 'nearest ' + (Math.abs(closest.delta) * 100).toFixed(1) + '%'
+          })
         )),
         el('td', { class: 'farm-col' }, el('div', { class: 'farm-cell', title: 'Capital to qualify, days to hold, and steps from this row\u2019s farm plan' },
           el('b', { text: fmtUsd(capitalFor(r)) + ' \u00b7 ' + holdDaysFor(r.age_days) + 'd' }),
@@ -808,9 +833,13 @@
     var nearest = band.slice().sort(function (a, b) {
       return Math.abs(a.implied_value_usd - row.implied_value_usd) - Math.abs(b.implied_value_usd - row.implied_value_usd);
     }).slice(0, 5);
-    var copy = band.length === 0
+    var closest = nearestNeighbor(row);
+    var nearestLine = closest
+      ? ' Nearest is ' + closest.row.name + ' at ' + signedPct(closest.delta) + ' (' + fmtUsd(closest.row.implied_value_usd) + ').'
+      : '';
+    var copy = (band.length === 0
       ? 'No other row scores within 5% of this implied value, so its position does not rest on rounding.'
-      : band.length + ' of the other ' + (DATA.board_size - 1) + ' rows score within 5% of this implied value, so the order between them is not firm. Moved \u00b15%, this row would rank between #' + ranks.best + ' and #' + ranks.worst + '.';
+      : band.length + ' of the other ' + (DATA.board_size - 1) + ' rows score within 5% of this implied value, so the order between them is not firm. Moved \u00b15%, this row would rank between #' + ranks.best + ' and #' + ranks.worst + '.') + nearestLine;
     var list = el('div', { class: 'trust-list' }, nearest.map(function (n) {
       var delta = (n.implied_value_usd - row.implied_value_usd) / row.implied_value_usd;
       return el('div', { class: 'trust-row' },

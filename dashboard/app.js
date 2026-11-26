@@ -5,9 +5,47 @@
   var DATA = window.RADAR;
   if (!DATA) return;
   var app = document.getElementById('board');
-  var state = { q: '', category: 'all', chain: 'all', tab: 'pre-token', sort: 'implied', dir: -1, selected: null };
+  var state = { q: '', category: 'all', chain: 'all', tab: 'pre-token', sort: 'implied', dir: -1, selected: null, shortlistOnly: false, compare: [] };
   var reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   var statsCounted = false;
+  var skipAnimation = false;
+
+  // The shortlist survives reloads in this browser; it is a working list, not part of the board.
+  var SHORTLIST_KEY = 'radar.shortlist.v1';
+  function readShortlist() {
+    try {
+      var list = JSON.parse(window.localStorage.getItem(SHORTLIST_KEY) || '[]');
+      return Array.isArray(list) ? list.filter(function (s) { return typeof s === 'string'; }) : [];
+    } catch (err) { return []; }
+  }
+  var shortlist = readShortlist();
+  function isShortlisted(slug) { return shortlist.indexOf(slug) >= 0; }
+  function isCompared(slug) { return state.compare.indexOf(slug) >= 0; }
+  function toggleShortlist(slug) {
+    var at = shortlist.indexOf(slug);
+    if (at >= 0) shortlist.splice(at, 1); else shortlist.push(slug);
+    try { window.localStorage.setItem(SHORTLIST_KEY, JSON.stringify(shortlist)); } catch (err) { /* private mode: keep it for this visit */ }
+    if (!dialog.open) { skipAnimation = true; render(); }
+  }
+  function toggleCompare(slug) {
+    var at = state.compare.indexOf(slug);
+    if (at >= 0) state.compare.splice(at, 1);
+    else {
+      if (state.compare.length >= 3) state.compare.shift();
+      state.compare.push(slug);
+    }
+    writeHash();
+    if (!dialog.open) { skipAnimation = true; render(); }
+  }
+  function rowBySlug(slug) {
+    return DATA.rows.filter(function (r) { return r.slug === slug; })[0] || null;
+  }
+  function medianOf(values) {
+    if (values.length === 0) return 0;
+    var sorted = values.slice().sort(function (a, b) { return a - b; });
+    var mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
 
   function countUp(node, target, format) {
     if (reduceMotion || !window.requestAnimationFrame) { node.textContent = format(target); return; }
@@ -100,6 +138,9 @@
     if (params.get('category')) state.category = params.get('category');
     if (params.get('chain')) state.chain = params.get('chain');
     if (params.get('p')) state.selected = params.get('p');
+    if (params.get('c')) {
+      state.compare = params.get('c').split(',').filter(function (s) { return s && rowBySlug(s) !== null; }).slice(0, 3);
+    }
   }
   function writeHash() {
     var params = new URLSearchParams();
@@ -107,6 +148,7 @@
     if (state.category !== 'all') params.set('category', state.category);
     if (state.chain !== 'all') params.set('chain', state.chain);
     if (state.selected) params.set('p', state.selected);
+    if (state.compare.length > 0) params.set('c', state.compare.join(','));
     var next = params.toString();
     var url = window.location.pathname + window.location.search + (next ? '#' + next : '');
     window.history.replaceState(null, '', url);
@@ -117,6 +159,7 @@
     return DATA.rows.filter(function (r) {
       if (state.category !== 'all' && r.category !== state.category) return false;
       if (state.chain !== 'all' && (r.chains || []).indexOf(state.chain) < 0) return false;
+      if (state.shortlistOnly && !isShortlisted(r.slug)) return false;
       if (!q) return true;
       var hay = [r.name, r.slug, r.category, (r.chains || []).join(' ')].join(' ').toLowerCase();
       return hay.indexOf(q) >= 0;
@@ -137,6 +180,150 @@
       if (av > bv) return dir;
       return a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0;
     });
+  }
+
+  function pickCell(r) {
+    var saved = isShortlisted(r.slug);
+    var comparing = isCompared(r.slug);
+    return el('div', { class: 'pick-cell' },
+      el('button', {
+        type: 'button', class: 'pick-btn star', 'aria-pressed': saved ? 'true' : 'false',
+        'aria-label': (saved ? 'Remove ' : 'Add ') + r.name + (saved ? ' from' : ' to') + ' the shortlist',
+        title: saved ? 'Shortlisted: click to remove' : 'Save to the shortlist',
+        onclick: function (e) { e.stopPropagation(); toggleShortlist(r.slug); },
+        onkeydown: function (e) { e.stopPropagation(); }
+      }, '\u2605'),
+      el('button', {
+        type: 'button', class: 'pick-btn cmp', 'aria-pressed': comparing ? 'true' : 'false',
+        'aria-label': (comparing ? 'Remove ' : 'Add ') + r.name + (comparing ? ' from' : ' to') + ' the comparison',
+        title: comparing ? 'In the comparison: click to remove' : 'Add to the comparison (up to 3)',
+        onclick: function (e) { e.stopPropagation(); toggleCompare(r.slug); },
+        onkeydown: function (e) { e.stopPropagation(); },
+        html: '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 5.5h8"/><path d="M8 3l2.5 2.5L8 8"/><path d="M13.5 10.5h-8"/><path d="M8 8l-2.5 2.5L8 13"/></svg>'
+      })
+    );
+  }
+
+  function comparePanel() {
+    var picked = state.compare.map(rowBySlug).filter(function (r) { return r !== null; });
+    if (picked.length < 2) return null;
+    var best = {
+      tvl: Math.max.apply(null, picked.map(function (r) { return r.tvl_usd; })),
+      peer: Math.max.apply(null, picked.map(function (r) { return r.peer_multiple; })),
+      implied: Math.max.apply(null, picked.map(function (r) { return r.implied_value_usd; })),
+      capital: Math.min.apply(null, picked.map(function (r) { return capitalFor(r); }))
+    };
+    var head = el('tr', null, el('th', { scope: 'col', text: 'Metric' }), picked.map(function (r) {
+      return el('th', { scope: 'col' },
+        el('div', { class: 'cmp-head' },
+          el('button', { type: 'button', class: 'cmp-name', text: r.name, title: 'Open ' + r.name, onclick: function () { openDetail(r.slug); } }),
+          el('button', {
+            type: 'button', class: 'cmp-remove', 'aria-label': 'Remove ' + r.name + ' from the comparison', text: '\u00d7',
+            onclick: function () { toggleCompare(r.slug); }
+          })
+        )
+      );
+    }));
+
+    function line(label, cells) {
+      return el('tr', null, el('th', { scope: 'row', text: label }), cells);
+    }
+    function cell(text, winning, extra) {
+      return el('td', { class: (winning ? 'best' : '') + (extra ? ' ' + extra : '') }, text);
+    }
+    var body = el('tbody', null,
+      line('Rank', picked.map(function (r) { return cell('#' + r.rank); })),
+      line('Category', picked.map(function (r) { return cell(r.category || 'Other'); })),
+      line('TVL', picked.map(function (r) { return cell(fmtUsd(r.tvl_usd), r.tvl_usd === best.tvl); })),
+      line('7d growth', picked.map(function (r) { return cell(fmtPct(r.change_7d), false, r.change_7d >= 0 ? 'pos' : 'neg'); })),
+      line('Age no token', picked.map(function (r) { return cell(fmtAge(r.age_days)); })),
+      line('Peer multiple', picked.map(function (r) { return cell(r.peer_multiple.toFixed(2) + 'x', r.peer_multiple === best.peer); })),
+      line('Implied value', picked.map(function (r) { return cell(fmtUsd(r.implied_value_usd), r.implied_value_usd === best.implied); })),
+      line('First move', picked.map(function (r) { return cell(fmtUsd(capitalFor(r)) + ' / ' + holdDaysFor(r.age_days) + 'd', capitalFor(r) === best.capital); })),
+      line('Farm plan', picked.map(function (r) { return cell((r.farm_steps || []).length + ' steps'); }))
+    );
+
+    return el('section', { class: 'compare glass' },
+      el('div', { class: 'compare-head' },
+        el('div', null,
+          el('h3', { text: 'Compare' }),
+          el('p', { class: 'compare-note', text: 'Best value in each row is highlighted. Two or three at a time; the third pick drops the oldest.' })
+        ),
+        el('button', { class: 'close', type: 'button', text: 'Clear', onclick: function () { state.compare = []; skipAnimation = true; render(); } })
+      ),
+      el('div', { class: 'compare-scroll' },
+        el('table', { class: 'compare-table' }, el('thead', null, head), body)
+      )
+    );
+  }
+
+  function categoryStats() {
+    var groups = {};
+    DATA.rows.forEach(function (r) {
+      var key = r.category || 'Other';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(r);
+    });
+    return Object.keys(groups).map(function (key) {
+      var list = groups[key];
+      return {
+        name: key,
+        count: list.length,
+        peers: medianOf(list.map(function (r) { return r.peer_multiple; })),
+        implied: medianOf(list.map(function (r) { return r.implied_value_usd; })),
+        tvl: list.reduce(function (sum, r) { return sum + r.tvl_usd; }, 0),
+        best: list.slice().sort(function (a, b) { return b.implied_value_usd - a.implied_value_usd; })[0]
+      };
+    }).sort(function (a, b) { return b.peers - a.peers || b.count - a.count || (a.name < b.name ? -1 : 1); });
+  }
+
+  function categoryPanel() {
+    var stats = categoryStats();
+    var maxPeer = stats.reduce(function (m, s) { return Math.max(m, s.peers); }, 0.01);
+    var body = el('tbody');
+    stats.forEach(function (s) {
+      body.appendChild(el('tr', null,
+        el('td', null, el('button', {
+          type: 'button', class: 'cat-link', text: s.name,
+          title: 'Show only ' + s.name + ' in the board',
+          onclick: function () {
+            state.category = s.name;
+            state.shortlistOnly = false;
+            state.tab = 'pre-token';
+            render();
+          }
+        })),
+        el('td', { class: 'num', text: String(s.count) }),
+        el('td', { class: 'num' },
+          el('div', { class: 'peer-cell' },
+            el('span', { text: s.peers.toFixed(2) + 'x' }),
+            el('span', { class: 'cat-bar', 'aria-hidden': 'true' }, el('i', { style: 'width:' + Math.max(2, Math.round((s.peers / maxPeer) * 100)) + '%' }))
+          )
+        ),
+        el('td', { class: 'num', text: fmtUsd(s.implied) }),
+        el('td', { class: 'num', text: fmtUsd(s.tvl) }),
+        el('td', { class: 'cat-best', text: s.best.name })
+      ));
+    });
+
+    return el('section', { class: 'cat-panel glass' },
+      el('h3', { text: 'Categories' }),
+      el('h2', { text: 'Where the market pays the most per dollar of TVL', style: 'margin-top:8px;font-size:28px;letter-spacing:-0.03em;' }),
+      el('p', { class: 'model-note', style: 'margin-top:10px;max-width:78ch;', text: 'Median peer multiple of the pre-token rows in each category, loosest first. Peer multiple is what live tokens in that category trade at per dollar of TVL, blended toward the base multiple, so a high number means the category has more room to re-rate. Click a category to filter the board.' }),
+      el('div', { class: 'cat-scroll' },
+        el('table', { class: 'cat-table' },
+          el('thead', null, el('tr', null,
+            el('th', { scope: 'col', text: 'Category' }),
+            el('th', { scope: 'col', text: 'Rows' }),
+            el('th', { scope: 'col', text: 'Median peer x' }),
+            el('th', { scope: 'col', text: 'Median implied' }),
+            el('th', { scope: 'col', text: 'TVL' }),
+            el('th', { scope: 'col', text: 'Top row' })
+          )),
+          body
+        )
+      )
+    );
   }
 
   function topbar() {
@@ -206,10 +393,22 @@
     var pre = el('button', { type: 'button', 'aria-pressed': state.tab === 'pre-token' ? 'true' : 'false', text: 'Pre-token', onclick: function () { state.tab = 'pre-token'; render(); } });
     var live = el('button', { type: 'button', 'aria-pressed': state.tab === 'live' ? 'true' : 'false', text: 'Live token', onclick: function () { state.tab = 'live'; render(); } });
 
+    var short = el('button', {
+      type: 'button',
+      'aria-pressed': state.shortlistOnly ? 'true' : 'false',
+      title: 'Show only the protocols you saved',
+      onclick: function () {
+        state.shortlistOnly = !state.shortlistOnly;
+        if (state.shortlistOnly) state.tab = 'pre-token';
+        render();
+      }
+    }, '\u2605 Shortlist (' + shortlist.length + ')');
+
     return el('section', { class: 'controls glass' },
       el('div', { class: 'field' }, el('label', { for: 'q', text: 'Search' }), search),
       el('div', { class: 'field' }, el('label', { for: 'category', text: 'Category' }), cat),
       el('div', { class: 'field' }, el('label', { for: 'chain', text: 'Chain' }), chain),
+      el('div', { class: 'status-wrap' }, el('span', { class: 'label', text: 'Your list' }), el('div', { class: 'tabs' }, short)),
       el('div', { class: 'status-wrap' }, el('span', { class: 'label', text: 'Token status' }), el('div', { class: 'tabs' }, pre, live))
     );
   }
@@ -217,6 +416,8 @@
   function metaLine(list) {
     var shown = state.tab === 'pre-token' ? list.length + ' rows shown' : DATA.live.length + ' live-token protocols';
     var note = state.tab === 'pre-token' ? 'Select a row to inspect model and farm plan' : 'Live tokens are comparables, not ranked pre-token targets';
+    if (state.shortlistOnly) note = 'Your shortlist only: ' + shortlist.length + ' saved';
+    else if (state.tab === 'pre-token' && state.compare.length >= 2) note = state.compare.length + ' selected to compare';
     return el('div', { class: 'meta-line' },
       el('span', null, el('strong', { text: shown }), ' · ' + note),
       el('span', { text: 'Sorted by ' + state.sort + (state.dir < 0 ? ' ↓' : ' ↑') })
@@ -244,7 +445,7 @@
         el('div', { class: 'empty' },
           el('h2', { text: 'No protocol matches that filter' }),
           el('p', { text: 'Try clearing search or choosing another category/chain.' }),
-          el('button', { class: 'btn primary', type: 'button', text: 'Clear filters', onclick: function () { state.q = ''; state.category = 'all'; state.chain = 'all'; writeHash(); render(); } })
+          el('button', { class: 'btn primary', type: 'button', text: 'Clear filters', onclick: function () { state.q = ''; state.category = 'all'; state.chain = 'all'; state.shortlistOnly = false; writeHash(); render(); } })
         )
       );
     }
@@ -276,9 +477,9 @@
           el('b', { text: fmtUsd(capitalFor(r)) }),
           el('span', { text: holdDaysFor(r.age_days) + 'd hold' })
         )),
-        el('td', { class: 'status-col' }, el('span', { class: 'status-pill', text: 'no token' }))
+        el('td', { class: 'pick-col' }, pickCell(r))
       );
-      if (i < 24 && !reduceMotion) {
+      if (i < 24 && !reduceMotion && !skipAnimation) {
         tr.className = 'row-in';
         tr.style.animationDelay = (i * 18) + 'ms';
       }
@@ -298,7 +499,7 @@
             sortHeader('peer', 'Peer x', 'peer-col'),
             sortHeader('implied', 'Implied value'),
             el('th', { scope: 'col', class: 'move-col', text: 'First move' }),
-            el('th', { scope: 'col', class: 'status-col', text: 'Status' })
+            el('th', { scope: 'col', class: 'pick-col', text: 'Pick' })
           )),
           tbody
         )
@@ -378,6 +579,18 @@
       el('button', { class: 'close', type: 'button', 'aria-label': 'Close details', text: 'Close', onclick: function () { dialog.close(); } })
     ));
 
+    var shortButton = el('button', { type: 'button', class: 'btn', 'aria-pressed': isShortlisted(row.slug) ? 'true' : 'false', onclick: function () {
+      toggleShortlist(row.slug);
+      shortButton.textContent = isShortlisted(row.slug) ? '\u2605 Shortlisted' : '\u2606 Add to shortlist';
+      shortButton.setAttribute('aria-pressed', isShortlisted(row.slug) ? 'true' : 'false');
+    } }, isShortlisted(row.slug) ? '\u2605 Shortlisted' : '\u2606 Add to shortlist');
+    var compareButton = el('button', { type: 'button', class: 'btn', 'aria-pressed': isCompared(row.slug) ? 'true' : 'false', onclick: function () {
+      toggleCompare(row.slug);
+      compareButton.textContent = isCompared(row.slug) ? 'In comparison' : 'Add to comparison';
+      compareButton.setAttribute('aria-pressed', isCompared(row.slug) ? 'true' : 'false');
+    } }, isCompared(row.slug) ? 'In comparison' : 'Add to comparison');
+    shell.appendChild(el('div', { class: 'detail-actions' }, shortButton, compareButton));
+
     var recomputed = impliedOf(row, DATA.model);
     var checks = recomputed === row.implied_value_usd ? 'Matches board.json.' : 'Differs from board.json; data may be stale.';
     shell.appendChild(el('section', { class: 'section' },
@@ -453,13 +666,21 @@
     shell.appendChild(hero());
     shell.appendChild(controls());
     shell.appendChild(metaLine(list));
+    if (state.tab === 'pre-token') {
+      var comparison = comparePanel();
+      if (comparison) shell.appendChild(comparison);
+    }
     shell.appendChild(state.tab === 'pre-token' ? boardTable() : liveTable());
-    if (state.tab === 'pre-token') shell.appendChild(modelPanel());
+    if (state.tab === 'pre-token') {
+      shell.appendChild(categoryPanel());
+      shell.appendChild(modelPanel());
+    }
     app.textContent = '';
     app.appendChild(shell);
     if (!dialog.isConnected) app.appendChild(dialog);
     app.setAttribute('aria-busy', 'false');
     statsCounted = true;
+    skipAnimation = false;
     if (state.selected) {
       var row = DATA.rows.filter(function (r) { return r.slug === state.selected; })[0];
       if (row) openDetail(row.slug);

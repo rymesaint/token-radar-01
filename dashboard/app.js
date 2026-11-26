@@ -556,6 +556,81 @@
     );
   }
 
+  // A rank under the board's own ordering: implied value first, then slug, with this row replaced.
+  function rankAmong(implied, slug) {
+    var better = 0;
+    DATA.rows.forEach(function (r) {
+      if (r.slug === slug) return;
+      if (r.implied_value_usd > implied || (r.implied_value_usd === implied && r.slug < slug)) better++;
+    });
+    return better + 1;
+  }
+  function impliedFrom(tvl, multiple, growthMult, maturityMult) {
+    return Math.max(1, Math.round(tvl * multiple * growthMult * maturityMult));
+  }
+  function signedPct(v) { return (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%'; }
+  function moveText(from, to) {
+    if (to === from) return 'rank unchanged';
+    var delta = from - to;
+    return 'rank ' + (delta > 0 ? 'up ' + delta + ' to #' + to : 'down ' + -delta + ' to #' + to);
+  }
+
+  function whySection(row) {
+    var m = DATA.model;
+    var mult = row.peer_multiple;
+    var gm = row.growth_multiplier;
+    var mm = row.maturity_multiplier;
+    var age = row.age_days === null || row.age_days === undefined ? m.unknown_age_days : row.age_days;
+    var growth = Math.min(m.growth_cap, Math.max(m.growth_floor, row.change_7d === null || row.change_7d === undefined ? 0 : row.change_7d));
+    var baseValue = row.tvl_usd * m.base_multiple;
+    var peerLift = mult / m.base_multiple;
+
+    var parts = [
+      { name: 'Peer multiple', lift: peerLift, now: mult.toFixed(2) + 'x' },
+      { name: '7d growth', lift: gm, now: fmtPct(row.change_7d) },
+      { name: 'Maturity', lift: mm, now: fmtAge(row.age_days) }
+    ].sort(function (a, b) { return Math.abs(b.lift - 1) - Math.abs(a.lift - 1); });
+    var top = parts[0];
+
+    var moves = [
+      { name: 'TVL', now: fmtUsd(row.tvl_usd), effect: 'sets the scale', change: 'TVL 10% higher', implied: impliedFrom(row.tvl_usd * 1.1, mult, gm, mm) },
+      { name: 'Peer multiple', now: mult.toFixed(2) + 'x', effect: signedPct(peerLift - 1) + ' vs base', change: 'peer multiple 10% higher', implied: impliedFrom(row.tvl_usd, round4(mult * 1.1), gm, mm) },
+      { name: '7d growth', now: fmtPct(row.change_7d), effect: signedPct(gm - 1), change: growth >= m.growth_cap ? 'growth already at the ' + m.growth_cap + ' point cap' : 'growth 10 points higher', implied: impliedFrom(row.tvl_usd, mult, round4(1 + Math.min(m.growth_cap, growth + 10) / 100 * m.growth_weight), mm) },
+      { name: 'Maturity', now: fmtAge(row.age_days), effect: signedPct(mm - 1), change: age >= m.maturity_days ? 'age already past the ' + Math.round(m.maturity_days / 365) + ' year maturity cap' : 'age one year older', implied: impliedFrom(row.tvl_usd, mult, gm, round4(m.maturity_floor + Math.min(age + 365, m.maturity_days) / m.maturity_days * m.maturity_range)) }
+    ];
+    moves.forEach(function (mv) { mv.rank = rankAmong(mv.implied, row.slug); });
+    var most = moves.slice().sort(function (a, b) { return Math.abs(b.rank - row.rank) - Math.abs(a.rank - row.rank); })[0];
+
+    var list = el('div', { class: 'why-list' });
+    moves.forEach(function (mv) {
+      var delta = row.rank - mv.rank;
+      list.appendChild(el('div', { class: 'why-row' },
+        el('div', { class: 'why-top' },
+          el('b', { text: mv.name }),
+          el('span', { class: 'why-now', text: mv.now }),
+          el('span', { class: 'why-eff', text: mv.effect })
+        ),
+        el('div', { class: 'why-move' },
+          mv.change + ': ' + fmtUsd(mv.implied) + ' implied, ',
+          el('span', { class: 'why-rank' + (delta > 0 ? ' up' : delta < 0 ? ' down' : ''), text: moveText(row.rank, mv.rank) })
+        )
+      ));
+    });
+
+    var headline = 'TVL sets the base value at ' + fmtUsd(baseValue) + ' (TVL x ' + m.base_multiple + ' base multiple). ' +
+      'The largest single adjustment is ' + top.name + ' at ' + signedPct(top.lift - 1) + '. ' +
+      (Math.abs(most.rank - row.rank) === 0
+        ? 'None of these one-at-a-time changes moves its rank.'
+        : 'Its rank moves most with ' + most.name + ': ' + most.change + ' would put it ' + moveText(row.rank, most.rank).replace('rank ', '') + '.');
+
+    return el('section', { class: 'section' },
+      el('h3', { text: 'Why this rank' }),
+      el('p', { class: 'detail-copy', text: headline }),
+      list,
+      el('p', { class: 'equation-note', text: 'Each line changes one factor and scores this row again against the other ' + (DATA.board_size - 1) + ' rows at their board values. A what-if for reading the board, not a change to board.json.' })
+    );
+  }
+
   var dialog = el('dialog', { class: 'detail', id: 'detail', 'aria-labelledby': 'detail-title' });
   dialog.addEventListener('close', function () { state.selected = null; writeHash(); render(); });
   dialog.addEventListener('click', function (e) {
@@ -606,6 +681,8 @@
       ),
       el('p', { class: 'equation-note', text: DATA.model_version + ': ' + fmtUsd(row.tvl_usd) + ' × ' + row.peer_multiple.toFixed(2) + ' × ' + row.growth_multiplier + ' × ' + row.maturity_multiplier + ' = ' + fmtUsd(recomputed) + '. ' + checks + ' Estimate, not price.' })
     ));
+
+    shell.appendChild(whySection(row));
 
     var comps = peerComps(row);
     var compSection = el('section', { class: 'section' },

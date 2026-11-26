@@ -157,12 +157,32 @@
     });
     return best;
   }
-  // How much evidence stands behind a category's peer number: below six live comparables the
-  // median is a handful of prices, so the label says so next to the count.
+  // How much evidence stands behind a category's peer number. The three sample tiers are fixed
+  // thresholds, and a multiple the model clamped is labelled clamped whatever its sample count:
+  // a floor value cannot be told apart from the measured median, so more prices do not firm it up.
+  var EVIDENCE_COPY = {
+    ample: 'Ten or more live comparables: the category median is a measurement.',
+    ok: 'Six to nine live comparables: usable, but one token can still move the median.',
+    thin: 'Three to five live comparables: a handful of prices, so read the multiple as a rough pointer.',
+    clamped: 'The model cut this multiple at its floor or ceiling, so the measured median lies outside the shown range and cannot separate tokens in this category.',
+    'market-wide': 'Fewer than three live comparables: the market-wide median is used instead, and it cannot separate one token from another.'
+  };
   function evidenceLabel(samples) {
     if (samples >= 10) return 'ample';
     if (samples >= 6) return 'ok';
-    return 'thin';
+    if (samples >= 3) return 'thin';
+    return null;
+  }
+  // Precedence: no own comparables at all, then a clamped multiple, then the sample tiers.
+  function peerEvidence(stat) {
+    if (!stat.own) return 'market-wide';
+    if (stat.clip) return 'clamped';
+    return evidenceLabel(stat.samples) || 'market-wide';
+  }
+  function rowEvidence(row) {
+    if (!row.peer_category) return 'market-wide';
+    if (clipOf(row.peer_multiple, DATA.model)) return 'clamped';
+    return evidenceLabel(row.peer_samples || 0) || 'market-wide';
   }
 
   function readHash() {
@@ -348,6 +368,7 @@
     var maxPeer = stats.reduce(function (m, s) { return Math.max(m, s.peers); }, 0.01);
     var body = el('tbody');
     stats.forEach(function (s) {
+      var ev = peerEvidence(s);
       body.appendChild(el('tr', null,
         el('td', null, el('button', {
           type: 'button', class: 'cat-link', text: s.name,
@@ -364,9 +385,9 @@
           s.own
             ? el('div', { class: 'samples-cell' },
                 el('span', { text: String(s.samples) }),
-                s.samples < 10 ? el('span', { class: 'ev-tag ' + evidenceLabel(s.samples), text: evidenceLabel(s.samples) }) : null
+                el('span', { class: 'ev-tag ' + ev, text: ev, title: EVIDENCE_COPY[ev] })
               )
-            : el('span', { class: 'peer-val none', text: '\u2014' })
+            : el('span', { class: 'peer-val none', text: '\u2014', title: EVIDENCE_COPY['market-wide'] })
         ),
         el('td', { class: 'num' },
           s.own
@@ -396,13 +417,13 @@
     return el('section', { class: 'cat-panel glass' },
       el('h3', { text: 'Categories' }),
       el('h2', { text: 'Where the market pays the most per dollar of TVL', style: 'margin-top:8px;font-size:28px;letter-spacing:-0.03em;' }),
-      el('p', { class: 'model-note', style: 'margin-top:10px;max-width:78ch;', text: 'What live tokens in each category trade at per dollar of TVL - the market number, unblended. The board itself softens it toward ' + DATA.model.base_multiple + ' before scoring (' + DATA.model.peer_weight + ' x peer + ' + (1 - DATA.model.peer_weight).toFixed(1) + ' x base), so a row\u2019s own multiple is closer to the base than this. Categories with fewer than ' + DATA.model.peer_min_samples + ' live comparables have no number of their own: they share the market-wide median, are marked, and are listed after the measured ones. A value on the ' + DATA.model.peer_min + 'x floor or ' + DATA.model.peer_max + 'x ceiling is shown as \u2264 or \u2265: the median was clamped there, so the market number itself can be further out. Samples counts the live tokens behind that number; under six it is marked thin, because a handful of market prices moves the median a lot. Click a category to filter the board.' }),
+      el('p', { class: 'model-note', style: 'margin-top:10px;max-width:78ch;', text: 'What live tokens in each category trade at per dollar of TVL - the market number, unblended. The board itself softens it toward ' + DATA.model.base_multiple + ' before scoring (' + DATA.model.peer_weight + ' x peer + ' + (1 - DATA.model.peer_weight).toFixed(1) + ' x base), so a row\u2019s own multiple is closer to the base than this. Categories with fewer than ' + DATA.model.peer_min_samples + ' live comparables have no number of their own: they share the market-wide median, are marked, and are listed after the measured ones. A value on the ' + DATA.model.peer_min + 'x floor or ' + DATA.model.peer_max + 'x ceiling is shown as \u2264 or \u2265: the median was clamped there, so the market number itself can be further out. Samples counts the live tokens behind that number and always carries its evidence tier: 10 or more ample, 6-9 ok, 3-5 thin. A multiple the model clamped is labelled clamped instead, since its measured median lies outside the shown range whatever the count. Click a category to filter the board.' }),
       el('div', { class: 'cat-scroll' },
         el('table', { class: 'cat-table' },
           el('thead', null, el('tr', null,
             el('th', { scope: 'col', text: 'Category' }),
             el('th', { scope: 'col', text: 'Rows' }),
-            el('th', { scope: 'col', text: 'Samples' }),
+            el('th', { scope: 'col', text: 'Samples', title: 'Live tokens behind the category median: 10+ ample, 6-9 ok, 3-5 thin. A clamped multiple is labelled clamped instead, and a category under 3 comparables shows a dash (market-wide).' }),
             el('th', { scope: 'col', text: 'Market peer x' }),
             el('th', { scope: 'col', text: 'Median implied' }),
             el('th', { scope: 'col', text: 'TVL' }),
@@ -544,6 +565,7 @@
       age_days: r.age_days, listed_at: r.listed_at,
       blended_multiple: r.peer_multiple, market_peer: round4(unblend(r.peer_multiple, DATA.model)),
       peer_samples: r.peer_samples, peer_clamp: clipOf(r.peer_multiple, DATA.model) || '',
+      peer_evidence: rowEvidence(r),
       growth_multiplier: r.growth_multiplier, maturity_multiplier: r.maturity_multiplier,
       implied_value_usd: r.implied_value_usd,
       farm_capital_usd: capitalFor(r), farm_hold_days: holdDaysFor(r.age_days),
@@ -834,6 +856,7 @@
       return Math.abs(a.implied_value_usd - row.implied_value_usd) - Math.abs(b.implied_value_usd - row.implied_value_usd);
     }).slice(0, 5);
     var closest = nearestNeighbor(row);
+    var ev = rowEvidence(row);
     var nearestLine = closest
       ? ' Nearest is ' + closest.row.name + ' at ' + signedPct(closest.delta) + ' (' + fmtUsd(closest.row.implied_value_usd) + ').'
       : '';
@@ -854,7 +877,7 @@
       el('h3', { text: 'Rank trust' }),
       el('p', { class: 'detail-copy why-copy', text: copy }),
       nearest.length ? list : null,
-      el('p', { class: 'equation-note', text: 'Peer evidence: ' + row.peer_samples + ' live tokens ' + (row.peer_category ? 'in ' + row.peer_category : 'across the snapshot (market-wide fallback)') + ', ' + evidenceLabel(row.peer_samples) + '. The Categories table carries the same count beside each peer multiple.' })
+      el('p', { class: 'equation-note', text: 'Peer evidence: ' + row.peer_samples + ' live tokens ' + (row.peer_category ? 'in ' + row.peer_category : 'across the snapshot (market-wide fallback)') + ' \u2014 ' + ev + '. ' + EVIDENCE_COPY[ev] + ' The Categories table carries the same count beside each peer multiple.' })
     );
   }
 

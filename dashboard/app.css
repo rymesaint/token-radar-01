@@ -345,6 +345,9 @@ tbody tr:last-child td { border-bottom: 0; }
   padding: 1px 6px; border-radius: 999px; font-family: var(--font-body); font-size: 10px; letter-spacing: 0.02em;
   color: var(--value); background: rgba(255,209,102,0.1); border: 1px solid rgba(255,209,102,0.28);
 }
+.ev-tag.ample { color: var(--accent); background: rgba(122,231,212,0.1); border-color: rgba(122,231,212,0.3); }
+.ev-tag.ok { color: #c9dde4; background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.16); }
+.ev-tag.thin, .ev-tag.clamped { color: var(--value); background: rgba(255,209,102,0.1); border-color: rgba(255,209,102,0.28); }
 .peer-src { margin-top: 4px; max-width: 200px; font-size: 11px; line-height: 1.4; color: var(--dim); }
 .cat-bar > i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--value)); }
 .cat-best { color: var(--muted); font-family: var(--font-body); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

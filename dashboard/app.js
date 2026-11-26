@@ -664,7 +664,7 @@
               class: 'rank-band',
               title: (near === 0
                 ? 'No other row sits within \u00b15% of this implied value'
-                : near + ' other rows sit within \u00b15% of this implied value') + '. Rank range if this implied value moved \u00b15%: ' + (ranks.best === ranks.worst ? '#' + ranks.best : '#' + ranks.best + '\u2013' + ranks.worst) + '.',
+                : near === 1 ? '1 other row sits within \u00b15% of this implied value' : near + ' other rows sit within \u00b15% of this implied value') + '. Rank range if this implied value moved \u00b15%: ' + (ranks.best === ranks.worst ? '#' + ranks.best : '#' + ranks.best + '\u2013' + ranks.worst) + '.',
               text: (near === 0 ? 'clear' : String(near)) + ' · ' + (ranks.best === ranks.worst ? '#' + ranks.best : '#' + ranks.best + '\u2013' + ranks.worst)
             })
           )

@@ -265,8 +265,8 @@
       line('Age no token', picked.map(function (r) { return cell(fmtAge(r.age_days)); })),
       line('Peer multiple', picked.map(function (r) { return cell(r.peer_multiple.toFixed(2) + 'x', r.peer_multiple === best.peer); })),
       line('Implied value', picked.map(function (r) { return cell(fmtUsd(r.implied_value_usd), r.implied_value_usd === best.implied); })),
-      line('First move', picked.map(function (r) { return cell(fmtUsd(capitalFor(r)) + ' / ' + holdDaysFor(r.age_days) + 'd', capitalFor(r) === best.capital); })),
-      line('Farm plan', picked.map(function (r) { return cell((r.farm_steps || []).length + ' steps'); }))
+      line('Farm', picked.map(function (r) { return cell(fmtUsd(capitalFor(r)) + ' \u00b7 ' + holdDaysFor(r.age_days) + 'd', capitalFor(r) === best.capital); })),
+      line('Farm steps', picked.map(function (r) { return cell((r.farm_steps || []).length + ' steps'); }))
     );
 
     return el('section', { class: 'compare glass' },

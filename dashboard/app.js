@@ -637,15 +637,15 @@
       ));
     });
 
-    var headline = 'TVL sets the base value at ' + fmtUsd(baseValue) + ' (TVL x ' + m.base_multiple + ' base multiple). ' +
-      'The largest single adjustment is ' + top.name + ' at ' + signedPct(top.lift - 1) + '. ' +
+    var headline = 'TVL sets the base at ' + fmtUsd(baseValue) + ' (x ' + m.base_multiple + '). ' +
+      'Largest adjustment: ' + top.name + ' ' + signedPct(top.lift - 1) + '. ' +
       (Math.abs(most.rank - row.rank) === 0
-        ? 'None of these one-at-a-time changes moves its rank.'
-        : 'Its rank moves most with ' + most.name + ': ' + most.change + ' would put it ' + moveText(row.rank, most.rank).replace('rank ', '') + '.');
+        ? 'No single-factor change moves its rank.'
+        : 'Rank moves most with ' + most.name + ' - ' + most.change + ' puts it ' + moveText(row.rank, most.rank).replace('rank ', '') + '.');
 
     return el('section', { class: 'section' },
       el('h3', { text: 'Why this rank' }),
-      el('p', { class: 'detail-copy', text: headline }),
+      el('p', { class: 'detail-copy why-copy', text: headline }),
       list,
       el('p', { class: 'equation-note', text: 'Each line changes one factor and scores this row again against the other ' + (DATA.board_size - 1) + ' rows at their board values. A what-if for reading the board, not a change to board.json.' })
     );

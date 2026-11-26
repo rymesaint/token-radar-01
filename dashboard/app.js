@@ -655,6 +655,9 @@
       var near = impliedBand(r).length;
       var ranks = bandRanks(r);
       var closest = nearestNeighbor(r);
+      var rankTitle = (near === 0
+        ? 'No other row sits within \u00b15% of this implied value'
+        : near === 1 ? '1 other row sits within \u00b15% of this implied value' : near + ' other rows sit within \u00b15% of this implied value') + '. Rank range if this implied value moved \u00b15%: ' + (ranks.best === ranks.worst ? '#' + ranks.best : '#' + ranks.best + '\u2013' + ranks.worst) + '.';
       var tr = el('tr', {
         'data-selected': state.selected === r.slug ? 'true' : 'false',
         tabindex: '0',
@@ -664,12 +667,11 @@
         el('td', { class: 'num rank-cell' },
           el('div', { class: 'rank-wrap' },
             el('b', { text: String(r.rank) }),
+            el('span', { class: 'rank-near', title: rankTitle, text: near === 0 ? 'clear' : near + ' close' }),
             el('span', {
               class: 'rank-band',
-              title: (near === 0
-                ? 'No other row sits within \u00b15% of this implied value'
-                : near === 1 ? '1 other row sits within \u00b15% of this implied value' : near + ' other rows sit within \u00b15% of this implied value') + '. Rank range if this implied value moved \u00b15%: ' + (ranks.best === ranks.worst ? '#' + ranks.best : '#' + ranks.best + '\u2013' + ranks.worst) + '.',
-              text: (near === 0 ? 'clear' : String(near)) + ' · ' + (ranks.best === ranks.worst ? '#' + ranks.best : '#' + ranks.best + '\u2013' + ranks.worst)
+              title: rankTitle,
+              text: ranks.best === ranks.worst ? '#' + ranks.best : '#' + ranks.best + '\u2013' + ranks.worst
             })
           )
         ),

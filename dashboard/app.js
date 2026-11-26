@@ -6,6 +6,22 @@
   if (!DATA) return;
   var app = document.getElementById('board');
   var state = { q: '', category: 'all', chain: 'all', tab: 'pre-token', sort: 'implied', dir: -1, selected: null };
+  var reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  var statsCounted = false;
+
+  function countUp(node, target, format) {
+    if (reduceMotion || !window.requestAnimationFrame) { node.textContent = format(target); return; }
+    var start = null;
+    var dur = 820;
+    function frame(now) {
+      if (start === null) start = now;
+      var t = Math.min(1, (now - start) / dur);
+      var eased = 1 - Math.pow(1 - t, 3);
+      node.textContent = format(Math.round(target * eased));
+      if (t < 1) window.requestAnimationFrame(frame);
+    }
+    window.requestAnimationFrame(frame);
+  }
 
   function fmtUsd(n) {
     if (n === null || n === undefined || !isFinite(n)) return 'n/a';
@@ -178,23 +194,28 @@
 
   function hero() {
     return el('section', { class: 'hero glass' },
+      el('div', { class: 'radar-sweep', 'aria-hidden': 'true' }),
       el('div', null,
         el('div', { class: 'kicker', text: 'Implied value watchlist' }),
         el('h1', { text: 'Find pre-token protocols before the market prices them.' }),
         el('p', { text: 'Every watchlist protocol with at least $' + Math.round(DATA.floor_usd / 1e6) + 'M TVL and no token is ranked here, plus ' + DATA.early_size + ' early protocols below that floor. Implied value is a model estimate from TVL, peer mcap/TVL multiples, 7d growth, and age without a token.' })
       ),
       el('div', { class: 'stats-grid' },
-        statCard('Watchlist covered', DATA.watchlist_size + ' / ' + DATA.watchlist_size, 'required floor'),
-        statCard('Rows scored', String(DATA.board_size), 'pre-token protocols'),
-        statCard('Early radar', String(DATA.early_size), 'below floor'),
-        statCard('Live set aside', String(DATA.live_size), 'already have token')
+        statCard('Watchlist covered', DATA.watchlist_size + ' / ' + DATA.watchlist_size, 'required floor', DATA.watchlist_size, function (n) { return n + ' / ' + n; }),
+        statCard('Rows scored', String(DATA.board_size), 'pre-token protocols', DATA.board_size, null),
+        statCard('Early radar', String(DATA.early_size), 'below floor', DATA.early_size, null),
+        statCard('Live set aside', String(DATA.live_size), 'already have token', DATA.live_size, null)
       )
     );
   }
-  function statCard(label, value, note) {
+  function statCard(label, value, note, countTo, format) {
+    var b = el('b', { text: value });
+    if (!statsCounted && typeof countTo === 'number') {
+      countUp(b, countTo, format || function (n) { return String(n); });
+    }
     return el('div', { class: 'stat' },
       el('span', { text: label }),
-      el('b', { text: value }),
+      b,
       el('small', { text: note })
     );
   }
@@ -265,7 +286,7 @@
     }
     var max = list.reduce(function (m, r) { return Math.max(m, r.implied_value_usd || 0); }, 1);
     var tbody = el('tbody');
-    list.forEach(function (r) {
+    list.forEach(function (r, i) {
       var growth = r.change_7d === null ? 'n/a' : fmtPct(r.change_7d);
       var growthClass = r.change_7d === null ? '' : r.change_7d >= 0 ? 'pos' : 'neg';
       var tr = el('tr', {
@@ -287,8 +308,16 @@
           el('div', { class: 'bar', 'aria-hidden': 'true' }, el('i', { style: 'width:' + Math.max(3, Math.round((r.implied_value_usd / max) * 100)) + '%' })),
           el('span', { class: 'num', text: fmtUsd(r.implied_value_usd) })
         )),
+        el('td', { class: 'move-col' }, el('div', { class: 'move-cell', title: 'Capital and hold time from this row\u2019s farm plan' },
+          el('b', { text: fmtUsd(capitalFor(r)) }),
+          el('span', { text: holdDaysFor(r.age_days) + 'd hold' })
+        )),
         el('td', { class: 'status-col' }, el('span', { class: 'status-pill', text: 'no token' }))
       );
+      if (i < 24 && !reduceMotion) {
+        tr.className = 'row-in';
+        tr.style.animationDelay = (i * 18) + 'ms';
+      }
       tbody.appendChild(tr);
     });
 
@@ -304,6 +333,7 @@
             sortHeader('age', 'Age', 'age-col'),
             sortHeader('peer', 'Peer x', 'peer-col'),
             sortHeader('implied', 'Implied value'),
+            el('th', { scope: 'col', class: 'move-col', text: 'First move' }),
             el('th', { scope: 'col', class: 'status-col', text: 'Status' })
           )),
           tbody
@@ -459,6 +489,7 @@
     app.appendChild(shell);
     if (!dialog.isConnected) app.appendChild(dialog);
     app.setAttribute('aria-busy', 'false');
+    statsCounted = true;
     if (state.selected) {
       var row = DATA.rows.filter(function (r) { return r.slug === state.selected; })[0];
       if (row) openDetail(row.slug);

@@ -210,8 +210,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .rank-cell { color: #c9dbe4; font-size: 13px; }
 .rank-wrap { display: grid; gap: 2px; }
 .rank-wrap b { font-weight: 550; }
-.rank-near { font-size: 10px; letter-spacing: 0.02em; color: var(--dim); white-space: nowrap; }
-.rank-band { font-family: var(--font-num); font-size: 9.5px; color: #8fa6b2; white-space: nowrap; }
+.rank-band { font-family: var(--font-num); font-size: 10px; letter-spacing: 0.01em; color: #93aab6; white-space: nowrap; }
 .name-cell { display: grid; gap: 4px; min-width: 180px; }
 .name-cell b { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: #f3fafc; }
 .name-cell span { font-size: 12px; color: var(--muted); line-height: 1.4; }
@@ -474,7 +473,7 @@ tbody tr.row-in { animation: rowIn 340ms cubic-bezier(0.2, 0.7, 0.3, 1) both; }
   .farm-cell b { font-size: 12px; }
   .farm-cell span { font-size: 11px; }
   .rank-cell { width: 56px; }
-  .rank-near { font-size: 9px; }
+  .rank-band { font-size: 9px; }
 }
 @media (max-width: 1080px) {
   .hero { grid-template-columns: 1fr; }

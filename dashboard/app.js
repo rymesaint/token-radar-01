@@ -661,14 +661,11 @@
           el('div', { class: 'rank-wrap' },
             el('b', { text: String(r.rank) }),
             el('span', {
-              class: 'rank-near',
-              title: near + ' other rows sit within \u00b15% of this implied value',
-              text: near === 0 ? 'clear' : near + ' close'
-            }),
-            el('span', {
               class: 'rank-band',
-              title: 'Rank range if this implied value moved \u00b15%',
-              text: ranks.best === ranks.worst ? '#' + ranks.best : '#' + ranks.best + '\u2013' + ranks.worst
+              title: (near === 0
+                ? 'No other row sits within \u00b15% of this implied value'
+                : near + ' other rows sit within \u00b15% of this implied value') + '. Rank range if this implied value moved \u00b15%: ' + (ranks.best === ranks.worst ? '#' + ranks.best : '#' + ranks.best + '\u2013' + ranks.worst) + '.',
+              text: (near === 0 ? 'clear' : String(near)) + ' · ' + (ranks.best === ranks.worst ? '#' + ranks.best : '#' + ranks.best + '\u2013' + ranks.worst)
             })
           )
         ),

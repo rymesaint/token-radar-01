@@ -686,20 +686,23 @@
     } }, isCompared(row.slug) ? 'In comparison' : 'Add to comparison');
     shell.appendChild(el('div', { class: 'detail-actions' }, shortButton, compareButton));
 
-    var recomputed = impliedOf(row, DATA.model);
+    var m = DATA.model;
+    var peer = unblend(row.peer_multiple, m);
+    var recomputed = impliedOf(row, m);
     var checks = recomputed === row.implied_value_usd ? 'Matches board.json.' : 'Differs from board.json; data may be stale.';
     shell.appendChild(el('section', { class: 'section' },
       el('h3', { text: 'Implied value' }),
       el('div', { class: 'metrics' },
         metric('TVL', fmtUsd(row.tvl_usd)),
-        metric('Peer multiple', row.peer_multiple.toFixed(2) + 'x'),
+        metric('Market peer', peer.toFixed(2) + 'x'),
+        metric('Blended multiple', row.peer_multiple.toFixed(2) + 'x'),
         metric('7d growth', fmtPct(row.change_7d)),
         metric('Age no token', fmtAge(row.age_days)),
         metric('Growth mult', String(row.growth_multiplier)),
         metric('Maturity mult', String(row.maturity_multiplier)),
         metric('Implied value', fmtUsd(row.implied_value_usd), true)
       ),
-      el('p', { class: 'equation-note', text: DATA.model_version + ': ' + fmtUsd(row.tvl_usd) + ' × ' + row.peer_multiple.toFixed(2) + ' × ' + row.growth_multiplier + ' × ' + row.maturity_multiplier + ' = ' + fmtUsd(recomputed) + '. ' + checks + ' Estimate, not price.' })
+      el('p', { class: 'equation-note', text: DATA.model_version + ': ' + fmtUsd(row.tvl_usd) + ' × ' + row.peer_multiple.toFixed(2) + ' × ' + row.growth_multiplier + ' × ' + row.maturity_multiplier + ' = ' + fmtUsd(recomputed) + '. ' + checks + ' Market peer is the raw median mcap/TVL of ' + row.peer_samples + ' live tokens' + (row.peer_category ? ' in ' + row.peer_category : ' across the snapshot (market-wide fallback)') + '; the model scores with the blend: ' + peer.toFixed(2) + 'x × ' + m.peer_weight + ' + base ' + m.base_multiple + ' × ' + round4(1 - m.peer_weight).toFixed(2) + ' = ' + row.peer_multiple.toFixed(2) + 'x. Estimate, not price.' })
     ));
 
     shell.appendChild(whySection(row));

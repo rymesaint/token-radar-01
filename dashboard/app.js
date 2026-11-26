@@ -257,6 +257,13 @@
     );
   }
 
+  // The board stores the blended multiple (0.6 x peer + 0.4 x base). Undo the blend to show the
+  // market's own mcap/TVL for the category, clamped the way the model clamps it.
+  function unblend(multiple, model) {
+    var raw = (multiple - (1 - model.peer_weight) * model.base_multiple) / model.peer_weight;
+    return Math.min(model.peer_max, Math.max(model.peer_min, raw));
+  }
+
   function categoryStats() {
     var groups = {};
     DATA.rows.forEach(function (r) {
@@ -266,15 +273,23 @@
     });
     return Object.keys(groups).map(function (key) {
       var list = groups[key];
+      var multiple = medianOf(list.map(function (r) { return r.peer_multiple; }));
       return {
         name: key,
         count: list.length,
-        peers: medianOf(list.map(function (r) { return r.peer_multiple; })),
+        peers: unblend(multiple, DATA.model),
+        blended: multiple,
+        own: list.some(function (r) { return r.peer_category === key; }),
         implied: medianOf(list.map(function (r) { return r.implied_value_usd; })),
         tvl: list.reduce(function (sum, r) { return sum + r.tvl_usd; }, 0),
         best: list.slice().sort(function (a, b) { return b.implied_value_usd - a.implied_value_usd; })[0]
       };
-    }).sort(function (a, b) { return b.peers - a.peers || b.count - a.count || (a.name < b.name ? -1 : 1); });
+    }).sort(function (a, b) {
+      // Categories with their own live comparables first: their number is a measurement, the
+      // market-wide fallback is one shared value and cannot separate them.
+      if (a.own !== b.own) return a.own ? -1 : 1;
+      return b.peers - a.peers || b.count - a.count || (a.name < b.name ? -1 : 1);
+    });
   }
 
   function categoryPanel() {
@@ -295,10 +310,15 @@
         })),
         el('td', { class: 'num', text: String(s.count) }),
         el('td', { class: 'num' },
-          el('div', { class: 'peer-cell' },
-            el('span', { text: s.peers.toFixed(2) + 'x' }),
-            el('span', { class: 'cat-bar', 'aria-hidden': 'true' }, el('i', { style: 'width:' + Math.max(2, Math.round((s.peers / maxPeer) * 100)) + '%' }))
-          )
+          s.own
+            ? el('div', { class: 'peer-cell' },
+                el('span', { class: 'peer-val', text: s.peers.toFixed(2) + 'x' }),
+                el('span', { class: 'cat-bar', 'aria-hidden': 'true' }, el('i', { style: 'width:' + Math.max(2, Math.round((s.peers / maxPeer) * 100)) + '%' }))
+              )
+            : el('div', { class: 'peer-cell' }, el('span', { class: 'peer-val none', text: 'market-wide' })),
+          el('div', { class: 'peer-src', text: s.own
+            ? (s.peers / DATA.model.base_multiple).toFixed(2) + '\u00d7 base'
+            : 'no own comparables' })
         ),
         el('td', { class: 'num', text: fmtUsd(s.implied) }),
         el('td', { class: 'num', text: fmtUsd(s.tvl) }),
@@ -309,16 +329,16 @@
     return el('section', { class: 'cat-panel glass' },
       el('h3', { text: 'Categories' }),
       el('h2', { text: 'Where the market pays the most per dollar of TVL', style: 'margin-top:8px;font-size:28px;letter-spacing:-0.03em;' }),
-      el('p', { class: 'model-note', style: 'margin-top:10px;max-width:78ch;', text: 'Median peer multiple of the pre-token rows in each category, loosest first. Peer multiple is what live tokens in that category trade at per dollar of TVL, blended toward the base multiple, so a high number means the category has more room to re-rate. Click a category to filter the board.' }),
+      el('p', { class: 'model-note', style: 'margin-top:10px;max-width:78ch;', text: 'What live tokens in each category trade at per dollar of TVL - the market number, unblended. The board itself softens it toward ' + DATA.model.base_multiple + ' before scoring (' + DATA.model.peer_weight + ' x peer + ' + (1 - DATA.model.peer_weight).toFixed(1) + ' x base), so a row\u2019s own multiple is closer to the base than this. Categories with fewer than ' + DATA.model.peer_min_samples + ' live comparables have no number of their own: they share the market-wide median, are marked, and are listed after the measured ones. Click a category to filter the board.' }),
       el('div', { class: 'cat-scroll' },
         el('table', { class: 'cat-table' },
           el('thead', null, el('tr', null,
             el('th', { scope: 'col', text: 'Category' }),
             el('th', { scope: 'col', text: 'Rows' }),
-            el('th', { scope: 'col', text: 'Median peer x' }),
+            el('th', { scope: 'col', text: 'Market peer x' }),
             el('th', { scope: 'col', text: 'Median implied' }),
             el('th', { scope: 'col', text: 'TVL' }),
-            el('th', { scope: 'col', text: 'Top row' })
+            el('th', { scope: 'col', class: 'cat-best', text: 'Top row' })
           )),
           body
         )

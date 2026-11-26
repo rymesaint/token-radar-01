@@ -130,6 +130,32 @@
     if (age < 365) return 45;
     return 30;
   }
+  // A rank is only as firm as the gap around it. Count the other board rows inside a +/-5% band
+  // of this row's implied value; the rank itself already ignores the current filter.
+  var BAND_PCT = 0.05;
+  function impliedBand(row, pct) {
+    var share = pct === undefined ? BAND_PCT : pct;
+    var lo = row.implied_value_usd * (1 - share);
+    var hi = row.implied_value_usd * (1 + share);
+    return DATA.rows.filter(function (r) {
+      return r.slug !== row.slug && r.implied_value_usd >= lo && r.implied_value_usd <= hi;
+    });
+  }
+  function bandRanks(row, pct) {
+    var share = pct === undefined ? BAND_PCT : pct;
+    return {
+      best: rankAmong(row.implied_value_usd * (1 + share), row.slug),
+      worst: rankAmong(row.implied_value_usd * (1 - share), row.slug)
+    };
+  }
+  // How much evidence stands behind a category's peer number: below six live comparables the
+  // median is a handful of prices, so the label says so next to the count.
+  function evidenceLabel(samples) {
+    if (samples >= 10) return 'ample';
+    if (samples >= 6) return 'ok';
+    return 'thin';
+  }
+
   function readHash() {
     var hash = window.location.hash.replace(/^#/, '');
     if (!hash) return;
@@ -293,6 +319,7 @@
         count: list.length,
         peers: unblend(multiple, DATA.model),
         clip: clipOf(multiple, DATA.model),
+        samples: list.reduce(function (m, r) { return Math.max(m, r.peer_samples || 0); }, 0),
         blended: multiple,
         own: list.some(function (r) { return r.peer_category === key; }),
         implied: medianOf(list.map(function (r) { return r.implied_value_usd; })),
@@ -324,6 +351,14 @@
           }
         })),
         el('td', { class: 'num', text: String(s.count) }),
+        el('td', { class: 'num samples-col' },
+          s.own
+            ? el('div', { class: 'samples-cell' },
+                el('span', { text: String(s.samples) }),
+                s.samples < 10 ? el('span', { class: 'ev-tag ' + evidenceLabel(s.samples), text: evidenceLabel(s.samples) }) : null
+              )
+            : el('span', { class: 'peer-val none', text: '\u2014' })
+        ),
         el('td', { class: 'num' },
           s.own
             ? el('div', { class: 'peer-cell' },
@@ -352,12 +387,13 @@
     return el('section', { class: 'cat-panel glass' },
       el('h3', { text: 'Categories' }),
       el('h2', { text: 'Where the market pays the most per dollar of TVL', style: 'margin-top:8px;font-size:28px;letter-spacing:-0.03em;' }),
-      el('p', { class: 'model-note', style: 'margin-top:10px;max-width:78ch;', text: 'What live tokens in each category trade at per dollar of TVL - the market number, unblended. The board itself softens it toward ' + DATA.model.base_multiple + ' before scoring (' + DATA.model.peer_weight + ' x peer + ' + (1 - DATA.model.peer_weight).toFixed(1) + ' x base), so a row\u2019s own multiple is closer to the base than this. Categories with fewer than ' + DATA.model.peer_min_samples + ' live comparables have no number of their own: they share the market-wide median, are marked, and are listed after the measured ones. A value on the ' + DATA.model.peer_min + 'x floor or ' + DATA.model.peer_max + 'x ceiling is shown as \u2264 or \u2265: the median was clamped there, so the market number itself can be further out. Click a category to filter the board.' }),
+      el('p', { class: 'model-note', style: 'margin-top:10px;max-width:78ch;', text: 'What live tokens in each category trade at per dollar of TVL - the market number, unblended. The board itself softens it toward ' + DATA.model.base_multiple + ' before scoring (' + DATA.model.peer_weight + ' x peer + ' + (1 - DATA.model.peer_weight).toFixed(1) + ' x base), so a row\u2019s own multiple is closer to the base than this. Categories with fewer than ' + DATA.model.peer_min_samples + ' live comparables have no number of their own: they share the market-wide median, are marked, and are listed after the measured ones. A value on the ' + DATA.model.peer_min + 'x floor or ' + DATA.model.peer_max + 'x ceiling is shown as \u2264 or \u2265: the median was clamped there, so the market number itself can be further out. Samples counts the live tokens behind that number; under six it is marked thin, because a handful of market prices moves the median a lot. Click a category to filter the board.' }),
       el('div', { class: 'cat-scroll' },
         el('table', { class: 'cat-table' },
           el('thead', null, el('tr', null,
             el('th', { scope: 'col', text: 'Category' }),
             el('th', { scope: 'col', text: 'Rows' }),
+            el('th', { scope: 'col', text: 'Samples' }),
             el('th', { scope: 'col', text: 'Market peer x' }),
             el('th', { scope: 'col', text: 'Median implied' }),
             el('th', { scope: 'col', text: 'TVL' }),
@@ -452,7 +488,21 @@
       el('div', { class: 'field' }, el('label', { for: 'category', text: 'Category' }), cat),
       el('div', { class: 'field' }, el('label', { for: 'chain', text: 'Chain' }), chain),
       el('div', { class: 'status-wrap' }, el('span', { class: 'label', text: 'Your list' }), el('div', { class: 'tabs' }, short)),
-      el('div', { class: 'status-wrap' }, el('span', { class: 'label', text: 'Token status' }), el('div', { class: 'tabs' }, pre, live))
+      el('div', { class: 'status-wrap' }, el('span', { class: 'label', text: 'Token status' }), el('div', { class: 'tabs' }, pre, live)),
+      el('div', { class: 'status-wrap' }, el('span', { class: 'label', text: 'Export' }), el('div', { class: 'tabs export' },
+        el('button', {
+          type: 'button',
+          title: 'Download the rows currently shown as CSV',
+          disabled: viewRows().length === 0 ? 'disabled' : null,
+          onclick: exportCsv
+        }, 'CSV'),
+        el('button', {
+          type: 'button',
+          title: 'Download the rows currently shown as JSON, with the model and the active filters',
+          disabled: viewRows().length === 0 ? 'disabled' : null,
+          onclick: exportJson
+        }, 'JSON')
+      ))
     );
   }
 
@@ -465,6 +515,74 @@
       el('span', null, el('strong', { text: shown }), ' · ' + note),
       el('span', { text: 'Sorted by ' + state.sort + (state.dir < 0 ? ' ↓' : ' ↑') })
     );
+  }
+
+  // Export works on the view currently on screen: same tab, filters, order and derived columns.
+  function viewRows() {
+    return state.tab === 'pre-token' ? sortedRows(filteredRows()) : DATA.live.slice();
+  }
+  function viewRecord(r) {
+    if (state.tab === 'live') {
+      return {
+        name: r.name, slug: r.slug, category: r.category || 'Other',
+        chains: (r.chains || []).join('; '), tvl_usd: r.tvl_usd, change_7d: r.change_7d,
+        mcap_usd: r.mcap_usd, status: 'live token'
+      };
+    }
+    return {
+      rank: r.rank, name: r.name, slug: r.slug, category: r.category || 'Other',
+      chains: (r.chains || []).join('; '), tvl_usd: r.tvl_usd, change_7d: r.change_7d,
+      age_days: r.age_days, listed_at: r.listed_at,
+      blended_multiple: r.peer_multiple, market_peer: round4(unblend(r.peer_multiple, DATA.model)),
+      peer_samples: r.peer_samples, peer_clamp: clipOf(r.peer_multiple, DATA.model) || '',
+      growth_multiplier: r.growth_multiplier, maturity_multiplier: r.maturity_multiplier,
+      implied_value_usd: r.implied_value_usd,
+      farm_capital_usd: capitalFor(r), farm_hold_days: holdDaysFor(r.age_days),
+      farm_steps: (r.farm_steps || []).length, close_within_5pct: impliedBand(r).length,
+      shortlisted: isShortlisted(r.slug), in_compare: isCompared(r.slug)
+    };
+  }
+  function csvCell(value) {
+    if (value === null || value === undefined) return '';
+    var text = String(value);
+    return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+  }
+  function downloadFile(name, mime, text) {
+    var url = URL.createObjectURL(new Blob([text], { type: mime }));
+    var link = el('a', { href: url, download: name });
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+  }
+  function exportCsv() {
+    var records = viewRows().map(viewRecord);
+    if (records.length === 0) return;
+    var cols = Object.keys(records[0]);
+    var lines = [cols.join(',')].concat(records.map(function (rec) {
+      return cols.map(function (c) { return csvCell(rec[c]); }).join(',');
+    }));
+    downloadFile('token-radar-' + DATA.as_of + (state.tab === 'live' ? '-live' : '') + '.csv',
+      'text/csv;charset=utf-8', lines.join('\r\n') + '\r\n');
+  }
+  function exportJson() {
+    var records = viewRows().map(viewRecord);
+    if (records.length === 0) return;
+    var payload = {
+      as_of: DATA.as_of,
+      source: DATA.source,
+      model_version: DATA.model_version,
+      model: DATA.model,
+      view: {
+        tab: state.tab, search: state.q, category: state.category, chain: state.chain,
+        shortlist_only: state.shortlistOnly, sort: state.sort,
+        direction: state.dir < 0 ? 'desc' : 'asc'
+      },
+      count: records.length,
+      rows: records
+    };
+    downloadFile('token-radar-' + DATA.as_of + (state.tab === 'live' ? '-live' : '') + '.json',
+      'application/json;charset=utf-8', JSON.stringify(payload, null, 2) + '\n');
   }
 
   function sortHeader(key, label, cls) {
@@ -497,13 +615,23 @@
     list.forEach(function (r, i) {
       var growth = r.change_7d === null ? 'n/a' : fmtPct(r.change_7d);
       var growthClass = r.change_7d === null ? '' : r.change_7d >= 0 ? 'pos' : 'neg';
+      var near = impliedBand(r).length;
       var tr = el('tr', {
         'data-selected': state.selected === r.slug ? 'true' : 'false',
         tabindex: '0',
         onclick: function () { openDetail(r.slug); },
         onkeydown: function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(r.slug); } }
       },
-        el('td', { class: 'num rank-cell', text: String(r.rank) }),
+        el('td', { class: 'num rank-cell' },
+          el('div', { class: 'rank-wrap' },
+            el('b', { text: String(r.rank) }),
+            el('span', {
+              class: 'rank-near',
+              title: near + ' other rows sit within \u00b15% of this implied value',
+              text: near === 0 ? 'clear' : near + ' close'
+            })
+          )
+        ),
         el('td', null, el('div', { class: 'name-cell' },
           el('b', { text: r.name }),
           el('span', { text: (r.category || 'Other') + ' · ' + (r.chains && r.chains.length ? r.chains.slice(0, 2).join(', ') : 'unnamed chain') })
@@ -516,9 +644,9 @@
           el('div', { class: 'bar', 'aria-hidden': 'true' }, el('i', { style: 'width:' + Math.max(3, Math.round((r.implied_value_usd / max) * 100)) + '%' })),
           el('span', { class: 'num', text: fmtUsd(r.implied_value_usd) })
         )),
-        el('td', { class: 'move-col' }, el('div', { class: 'move-cell', title: 'Capital and hold time from this row\u2019s farm plan' },
-          el('b', { text: fmtUsd(capitalFor(r)) }),
-          el('span', { text: holdDaysFor(r.age_days) + 'd hold' })
+        el('td', { class: 'farm-col' }, el('div', { class: 'farm-cell', title: 'Capital to qualify, days to hold, and steps from this row\u2019s farm plan' },
+          el('b', { text: fmtUsd(capitalFor(r)) + ' \u00b7 ' + holdDaysFor(r.age_days) + 'd' }),
+          el('span', { text: (r.farm_steps || []).length + ' steps' })
         )),
         el('td', { class: 'pick-col' }, pickCell(r))
       );
@@ -541,7 +669,7 @@
             sortHeader('age', 'Age', 'age-col'),
             sortHeader('peer', 'Peer x', 'peer-col'),
             sortHeader('implied', 'Implied value'),
-            el('th', { scope: 'col', class: 'move-col', text: 'First move' }),
+            el('th', { scope: 'col', class: 'farm-col', text: 'Farm' }),
             el('th', { scope: 'col', class: 'pick-col', text: 'Pick' })
           )),
           tbody
@@ -674,6 +802,33 @@
     );
   }
 
+  function rankTrustSection(row) {
+    var band = impliedBand(row);
+    var ranks = bandRanks(row);
+    var nearest = band.slice().sort(function (a, b) {
+      return Math.abs(a.implied_value_usd - row.implied_value_usd) - Math.abs(b.implied_value_usd - row.implied_value_usd);
+    }).slice(0, 5);
+    var copy = band.length === 0
+      ? 'No other row scores within 5% of this implied value, so its position does not rest on rounding.'
+      : band.length + ' of the other ' + (DATA.board_size - 1) + ' rows score within 5% of this implied value, so the order between them is not firm. Moved \u00b15%, this row would rank between #' + ranks.best + ' and #' + ranks.worst + '.';
+    var list = el('div', { class: 'trust-list' }, nearest.map(function (n) {
+      var delta = (n.implied_value_usd - row.implied_value_usd) / row.implied_value_usd;
+      return el('div', { class: 'trust-row' },
+        el('b', { text: n.name }),
+        el('span', { class: 'trust-cat', text: n.category || 'Other' }),
+        el('span', { class: 'trust-implied', text: fmtUsd(n.implied_value_usd) }),
+        el('span', { class: 'trust-delta', text: signedPct(delta) })
+      );
+    }));
+
+    return el('section', { class: 'section' },
+      el('h3', { text: 'Rank trust' }),
+      el('p', { class: 'detail-copy why-copy', text: copy }),
+      nearest.length ? list : null,
+      el('p', { class: 'equation-note', text: 'Peer evidence: ' + row.peer_samples + ' live tokens ' + (row.peer_category ? 'in ' + row.peer_category : 'across the snapshot (market-wide fallback)') + ', ' + evidenceLabel(row.peer_samples) + '. The Categories table carries the same count beside each peer multiple.' })
+    );
+  }
+
   var dialog = el('dialog', { class: 'detail', id: 'detail', 'aria-labelledby': 'detail-title' });
   dialog.addEventListener('close', function () { state.selected = null; writeHash(); render(); });
   dialog.addEventListener('click', function (e) {
@@ -731,6 +886,7 @@
     ));
 
     shell.appendChild(whySection(row));
+    shell.appendChild(rankTrustSection(row));
 
     var comps = peerComps(row);
     var compSection = el('section', { class: 'section' },

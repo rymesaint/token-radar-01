@@ -559,6 +559,7 @@
         mcap_usd: r.mcap_usd, status: 'live token'
       };
     }
+    var closest = nearestNeighbor(r);
     return {
       rank: r.rank, name: r.name, slug: r.slug, category: r.category || 'Other',
       chains: (r.chains || []).join('; '), tvl_usd: r.tvl_usd, change_7d: r.change_7d,
@@ -570,9 +571,12 @@
       implied_value_usd: r.implied_value_usd,
       farm_capital_usd: capitalFor(r), farm_hold_days: holdDaysFor(r.age_days),
       farm_steps: (r.farm_steps || []).length, close_within_5pct: impliedBand(r).length,
-      nearest_gap_pct: round4(nearestNeighbor(r).delta * 100),
+      // Absolute, like the table cell: the sign lives in nearest_direction so the two never disagree.
+      nearest_gap_pct: round4(Math.abs(closest.delta) * 100),
       rank_band: '#' + bandRanks(r).best + '-' + bandRanks(r).worst,
-      shortlisted: isShortlisted(r.slug), in_compare: isCompared(r.slug)
+      shortlisted: isShortlisted(r.slug), in_compare: isCompared(r.slug),
+      // Appended so every earlier column keeps its position; above means the neighbour scores higher.
+      nearest_direction: closest.delta > 0 ? 'above' : 'below'
     };
   }
   function csvCell(value) {

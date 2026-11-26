@@ -3,11 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>Token Radar: pre-token protocols ranked by implied value</title>
-<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="app.css?v=2">
 </head>
 <body>
 <a class="skip" href="#board">Skip to the board</a>
+<div class="ambient" aria-hidden="true">
+  <div class="orb orb-a"></div>
+  <div class="orb orb-b"></div>
+  <div class="gridwash"></div>
+</div>
 <main id="board" tabindex="-1" aria-busy="true"></main>
 <script src="../data.js"></script>
 <script src="app.js"></script>
